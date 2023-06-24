@@ -4,14 +4,13 @@ import itertools
 from collections import Counter
 import json
 
-
-
 def nested_map(operation: Callable[[Any], Any], note_array: Any) -> List[Any]:
     if isinstance(note_array, list):
         return [nested_map(operation, x) for x in note_array]
     else:
         return operation(note_array)
-    
+
+
 def nested_zip(a, b):
     if isinstance(a, list) and isinstance(b, list):
         return [nested_zip(sub_a, sub_b) for sub_a, sub_b in zip(a, b)]
@@ -28,11 +27,12 @@ def map_range(value, from_min, from_max, to_min, to_max):
     scaled_value = float(value - from_min) / float(from_range)
     return to_min + (scaled_value * to_range)    
 
+
 def is_odd(num):
     return num % 2 != 0
 
 class Note:
-    def __init__():
+    def __init__(self):
         return 
 
 class Notation(Note):
@@ -271,6 +271,13 @@ class Cluster:
                 continue
                 
         return Cluster(result)
+    
+    def remove_zero(self) -> 'Cluster':
+        result = []
+        for item in self.note_array:
+            if item.pitch != 0:
+                result.append(item)
+        return Cluster(result)
 
 
     def inflat(self, inflat_num) -> 'Cluster':
@@ -279,7 +286,7 @@ class Cluster:
             result.extend([note] * inflat_num)
         return Cluster(result)    
     
-    def generate_progression(self, progression_pattern, source_safe_value: int = 10, progression_safe_value: int = 6) -> 'Cluster':
+    def generate_progression(self, progression_pattern, source_safe_value: int = 20, progression_safe_value: int = 20) -> 'Cluster':
         # progression_pattern: list of intervals
         # don't over use it or it will explode
         result = []
@@ -338,7 +345,7 @@ class Cluster:
             print("Hijack Failed: Invalid index, index: {}, length: {}".format(index, self.length))   
         return copy
     
-    def re_sequence(self, pattern) -> 'Cluster':
+    def pitch_pattern(self, pattern) -> 'Cluster':
         copy = self.copy()
         if len(pattern) < len(self.note_array):
             for index, item in enumerate(copy.note_array):
@@ -384,6 +391,12 @@ class Cluster:
 
 
     # operator channel    
+    def channel_filter_and_rewrap(self, channel_ziped_in,  channel_sel) -> 'Cluster':
+        result = []
+        for note, channel_signature in channel_ziped_in:
+            if channel_signature == channel_sel:
+                result.append(note)
+        return Cluster(result)
     
     def zip_channel(self, channel):
         channel_signature = map(lambda x: channel, self.note_array)
@@ -398,32 +411,21 @@ class Cluster:
             return self.note_array[index]   
         else:
             print("get_node Failed: Invalid index, index: {}".format(index)) 
-    
-    
-    def channel_filter(self, channel):
-        result = []
-        for note, channel_signature in self.zip_channel(channel):
-            if note.channel == channel_signature:
-                result.append(note)
-        return result
-    
-    def split_to(self, index, method, channel_to):
-        # method: before, after
-        result = []
-        if method == "before":
-            for note in self.note_array:
-                if note.index < index:
-                    result.append(note)
-                else:
-                    break
-        elif method == "after":
-            for note in self.note_array:
-                if note.index > index:
-                    result.append(note)
-        else:
-            raise Exception("Invalid method")
 
-        return self.zip_sequence_channel(result, channel_to)  
+    
+    
+    def split_to_channel(self, control_index, left_signature, right_signature):
+        # method: before, after
+        left = []
+        right = []
+        for index, note in enumerate(self.note_array):
+            if index < control_index:
+                left.append(note)
+            else:
+                right.append(note)
+       
+
+        return (self.zip_sequence_channel(left, left_signature), self.zip_sequence_channel(right, right_signature)) 
     
 
     #operator info
@@ -452,10 +454,6 @@ class Cluster:
             print("pitch: {}, duration: {}".format(note.pitch, note.value))
         return self  
 
-
-        
-
-
     # CALCULATE DURATION BEGIN
 
     def flatmap_to_note_duration_list(self):
@@ -479,10 +477,7 @@ class Cluster:
 
         return note_durations
     
-    # EXPORT TO NODE
-
-      
-
+    # EXPORT TO NODE  
     def get_event_bind(self) -> List[Tuple[Notation, float]]:
         notes = self.flatten(self.note_array)
         note_durations = self.flatmap_to_note_duration_list()
@@ -499,61 +494,3 @@ class Cluster:
             last_end_time += event[1]
         return note_out_list    
     
-    
-    
-
-class QuantizedNote:
-    def __init__(self, pitch, quantized_start_step, quantized_end_step, total_quantization_step):
-        self.pitch = pitch
-        self.quantizedStartStep = quantized_start_step
-        self.quantizedEndStep = quantized_end_step
-        self.total_quantization_step = total_quantization_step
-
-    def full_res_to_Notation(self) -> Notation:
-        duration = (self.quantizedEndStep - self.quantizedStartStep) / self.total_quantization_step
-        return Notation(self.pitch, duration)
-    
-
-    def to_Notation(self) -> Notation:
-        return Notation(self.pitch, 1)
-    
-
-def quantized_Notes_to_Clusters(quantized_notes : List[QuantizedNote], total_quantization_step):
-    noteArray = list(map(lambda note: note.to_Notation(), quantized_notes))
-    return Cluster(noteArray)
-
-
-def note_array_to_sequence(note_array, total_quantize_step):
-    result = []
-    for note in note_array:
-        jsonNote = json.loads(note)
-        note = QuantizedNote(pitch= jsonNote["pitch"], quantized_start_step=jsonNote["quantizedStartStep"], quantized_end_step=  jsonNote["quantizedEndStep"],total_quantization_step = 128)
-        result.append(note)
-    return result    
-            
-
-def convert_DAT_to_array(dat):
-    '''only for 1-dimensional DAT'''
-    data_array = []
-    for row in range(dat.numRows):
-        data_array.append(dat[row, 0].val)
-    return data_array            
-   
-def convert_array_to_DAT(array):
-    '''only for 1-dimensional DAT'''
-    dat = op('table1')
-    dat.clear()
-    for i in range(len(array)):
-        rows = dat.appendRow([array[i].pitch, array[i].start_time, array[i].end_time])
-    return dat
-
-
- 
-
-jsons = convert_DAT_to_array(op('json2'))
-cluster = quantized_Notes_to_Clusters(note_array_to_sequence(jsons, 128), 128)
-
-note = cluster.remove_duplicates_last()
-
-
-convert_array_to_DAT(note.get_cluster_out())
